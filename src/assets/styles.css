@@ -1,0 +1,464 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  line-height: 1.5;
+  background-color: #222;
+}
+
+.container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.score {
+  font-family: "Press Start 2P", cursive;
+  font-size: 0.875rem;
+  color: #ddd;
+  text-align: right;
+  padding: 1rem;
+}
+
+/* Home */
+.home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0 0 0;
+}
+
+.title {
+  font-family: "Press Start 2P", cursive;
+  font-size: 3rem;
+  color: #fdd835;
+  letter-spacing: 4px;
+  margin: 1rem 0 2rem 0;
+  text-shadow: 2px 2px 0 #000, -2px -2px 0 #000;
+}
+
+.levels {
+  display: flex;
+  gap: 1rem;
+}
+
+.level {
+  font-family: "Press Start 2P", cursive;
+  font-size: 0.875rem;
+  color: #111;
+  background: #fdd835;
+  border: none;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.level.active {
+  background: #ffca28;
+  outline: 2px solid #fff;
+}
+
+.hint {
+  font-family: "Press Start 2P", cursive;
+  color: #ddd;
+  margin-top: 1rem;
+}
+
+.game {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 4rem);
+  max-height: 800px;
+}
+
+.game::before {
+  content: "";
+  display: block;
+  padding-top: 100%;
+}
+
+.message-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(34, 34, 34, 0.6);
+  z-index: 100;
+}
+
+.message-box p {
+  font-family: "Press Start 2P", cursive;
+  font-size: 1.25rem;
+  color: #ddd;
+  margin-top: -2rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.ui {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(28, 1fr);
+  grid-template-rows: repeat(31, 1fr);
+  overflow: hidden;
+}
+
+.pacman {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(28, 1fr);
+  grid-template-rows: repeat(31, 1fr);
+  overflow: hidden;
+}
+
+.pacman .row {
+  display: grid;
+  grid-row: span 1;
+  grid-column: span 28;
+  grid-template-columns: repeat(28, 1fr);
+}
+
+.ghosts {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(28, 1fr);
+  grid-template-rows: repeat(31, 1fr);
+  overflow: hidden;
+}
+
+.ghost {
+  width: 20px;
+  height: 20px;
+  border-radius: 50% 50% 0 0;
+  position: relative;
+  justify-self: center;
+  align-self: center;
+}
+
+.ghost.blinky {
+  background-color: #ff0000;
+}
+
+.ghost.pinky {
+  background-color: #ffb8ff;
+}
+
+.ghost.inky {
+  background-color: #00ffff;
+}
+
+.ghost.clyde {
+  background-color: #ffb852;
+}
+
+.ghost::before {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+  background: inherit;
+  border-radius: 0 0 50% 50%;
+}
+
+.ghost::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  background: #000;
+  border-radius: 0 0 50% 50%;
+}
+
+/* Grid lines for maze */
+span.line {
+  position: relative;
+}
+
+span.border {
+  margin: 4px;
+  border: 2px solid #15a;
+}
+
+span.border-top {
+  margin-top: 4px;
+  border-top: 2px solid #15a;
+}
+
+span.border-right {
+  margin-right: 4px;
+  border-right: 2px solid #15a;
+}
+
+span.border-bottom {
+  margin-bottom: 4px;
+  border-bottom: 2px solid #15a;
+}
+
+span.border-left {
+  margin-left: 4px;
+  border-left: 2px solid #15a;
+}
+
+span.border-y {
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border-top: 2px solid #15a;
+  border-bottom: 2px solid #15a;
+}
+
+span.border-y::before,
+span.border-y::after {
+  content: "";
+  border-top: 2px solid #15a;
+  border-bottom: 2px solid #15a;
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 6px;
+}
+
+span.border-y::before {
+  left: -6px;
+}
+
+span.border-y::after {
+  right: -6px;
+}
+
+span.door {
+  border-color: #fbd;
+  margin: 8px;
+}
+
+span.door::before,
+span.door::after {
+  border-color: #fbd;
+}
+
+span.door-l::after,
+span.door-r::before {
+  display: none;
+}
+
+span.border-x {
+  margin-left: 4px;
+  margin-right: 4px;
+  border-left: 2px solid #15a;
+  border-right: 2px solid #15a;
+}
+
+span.border-x::before,
+span.border-x::after {
+  content: "";
+  border-left: 0.125rem solid #15a;
+  border-right: 0.125rem solid #15a;
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  height: 6px;
+}
+
+span.border-x::before {
+  top: -6px;
+}
+
+span.border-x::after {
+  bottom: -6px;
+}
+
+/* Pacman tiles */
+.pacman .tile[data-status="coin"] {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: #ddd;
+  justify-self: center;
+  align-self: center;
+}
+
+.pacman .tile[data-status="power"] {
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background-color: #ddd;
+  justify-self: center;
+  align-self: center;
+  animation: blink 0.7s ease infinite;
+}
+
+.pacman .tile[data-status="pacman"] {
+  position: relative;
+  z-index: 99;
+  margin: -3px;
+  width: 32px;
+  height: 32px;
+}
+
+.pacman .tile[data-status="pacman"][data-direction="left"] {
+  transform: scaleX(-1);
+}
+
+.pacman .tile[data-status="pacman"][data-direction="up"] {
+  transform: rotate(-90deg);
+}
+
+.pacman .tile[data-status="pacman"][data-direction="down"] {
+  transform: rotate(90deg);
+}
+
+.pacman .tile[data-status="pacman"]::before,
+.pacman .tile[data-status="pacman"]::after {
+  content: "";
+  display: block;
+  position: absolute;
+  height: 50%;
+  width: 100%;
+  background-color: #fe0;
+}
+
+.pacman .tile[data-status="pacman"]::before {
+  top: 0;
+  border-radius: 20px 20px 0 0;
+  animation: top 0.8s linear infinite;
+}
+
+.pacman .tile[data-status="pacman"]::after {
+  bottom: 0;
+  border-radius: 0 0 20px 20px;
+  animation: bottom 0.8s linear infinite;
+}
+
+.pacman .tile[data-status="pacman"][data-animation="death"] {
+  background-color: #fe0;
+  border-radius: 100%;
+}
+
+.pacman .tile[data-status="pacman"][data-animation="death"]::before,
+.pacman .tile[data-status="pacman"][data-animation="death"]::after {
+  animation: none;
+}
+
+@keyframes top {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-35deg);
+  }
+}
+
+@keyframes bottom {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(35deg);
+  }
+}
+
+@keyframes blink {
+  50% {
+    background-color: transparent;
+  }
+}
+
+/* Corner decorations */
+.close-top-left::before {
+  content: "";
+  border-left: 0.125rem solid #15a;
+  position: absolute;
+  left: 4px;
+  height: 12px;
+  top: -6px;
+}
+
+.close-top-right::before {
+  content: "";
+  border-right: 0.125rem solid #15a;
+  position: absolute;
+  right: 4px;
+  height: 12px;
+  top: -6px;
+}
+
+.close-bottom-left::after {
+  content: "";
+  border-left: 0.125rem solid #15a;
+  position: absolute;
+  left: 4px;
+  height: 12px;
+  bottom: -6px;
+}
+
+.close-bottom-right::after {
+  content: "";
+  border-right: 0.125rem solid #15a;
+  position: absolute;
+  right: 4px;
+  height: 12px;
+  bottom: -6px;
+}
+
+.close-left-top::before {
+  content: "";
+  border-top: 0.125rem solid #15a;
+  position: absolute;
+  top: 4px;
+  width: 12px;
+  left: -6px;
+}
+
+.close-left-bottom::before {
+  content: "";
+  border-bottom: 0.125rem solid #15a;
+  position: absolute;
+  bottom: 4px;
+  width: 12px;
+  left: -6px;
+}
+
+.close-right-top::after {
+  content: "";
+  border-top: 0.125rem solid #15a;
+  position: absolute;
+  top: 4px;
+  width: 12px;
+  right: -6px;
+}
+
+.close-right-bottom::after {
+  content: "";
+  border-bottom: 0.125rem solid #15a;
+  position: absolute;
+  bottom: 4px;
+  width: 12px;
+  right: -6px;
+}
