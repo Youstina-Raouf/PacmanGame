@@ -84,8 +84,10 @@ let animationId = 0
 let grid = [] // 0 empty, 1 pellet, 2 wall
 let pelletCount = 0
 // pacman: position (float), current direction (dirX/dirY), queued next direction (nextDirX/nextDirY)
-let pacman = { x: 1, y: 1, dirX: 1, dirY: 0, nextDirX: 0, nextDirY: 0, nextFacing: 0, speed: 7, facing: 0, mouth: 0 }
+let pacman = { x: 1, y: 1, dirX: 1, dirY: 0, nextDirX: 0, nextDirY: 0, nextFacing: 0, speed: 7, facing: 0, mouth: 0, mouthPhase: 0 }
 let ghosts = []
+// Debug toggle: set true to show tile vs actual center markers and offsets
+const SHOW_DEBUG_CENTER = true
 
 function buildFixedMaze() {
 	grid = Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0))
@@ -212,14 +214,21 @@ function step(deltaSeconds) {
 	const moveTiles = pacman.speed * deltaSeconds
 	const cx = Math.round(pacman.x)
 	const cy = Math.round(pacman.y)
-	// If there's a queued turn and we're near the tile center, perform it if possible
+	// If there's a queued turn, try to perform it when Pac-Man is aligned on the perpendicular axis
 	const distX = pacman.x - cx
 	const distY = pacman.y - cy
-	const nearCenter = Math.hypot(distX, distY) < 0.46
-	if ((pacman.nextDirX !== 0 || pacman.nextDirY !== 0) && nearCenter) {
+	const nearCenterRadial = Math.hypot(distX, distY) < 0.46
+	const nearCenterX = Math.abs(distX) < 0.5
+	const nearCenterY = Math.abs(distY) < 0.5
+	if (pacman.nextDirX !== 0 || pacman.nextDirY !== 0) {
 		const ntx = cx + pacman.nextDirX
 		const nty = cy + pacman.nextDirY
-		if (isWalkable(ntx, nty)) {
+		const canWalk = isWalkable(ntx, nty)
+		// allow turn if: near center radially, or aligned on perpendicular axis, or currently stopped
+		const wantsHorizontal = pacman.nextDirX !== 0
+		const wantsVertical = pacman.nextDirY !== 0
+		const aligned = (wantsHorizontal && nearCenterY) || (wantsVertical && nearCenterX)
+		if (canWalk && (nearCenterRadial || aligned || (pacman.dirX === 0 && pacman.dirY === 0))) {
 			pacman.dirX = pacman.nextDirX
 			pacman.dirY = pacman.nextDirY
 			pacman.facing = pacman.nextFacing || pacman.facing
@@ -321,6 +330,17 @@ function step(deltaSeconds) {
 			store.dispatch('pauseGame')
 		}
 	}
+
+	// Animation state updates: pacman mouth phase and ghost bob phases
+	pacman.mouthPhase = (pacman.mouthPhase || 0) + deltaSeconds * 8
+	pacman.mouth = Math.abs(Math.sin(pacman.mouthPhase)) // 0..1
+	for (const g of ghosts) {
+		g.bobPhase = (g.bobPhase || 0) + deltaSeconds * 6
+		g.bobOffset = Math.sin(g.bobPhase) * 2.2
+		// make pupils track pacman slightly (store for drawGhost)
+		g.pupilOffsetX = clamp((pacman.x - g.x) * 0.08, -0.08, 0.08)
+		g.pupilOffsetY = clamp((pacman.y - g.y) * 0.06, -0.06, 0.06)
+	}
 }
 
 function draw() {
@@ -350,23 +370,43 @@ function draw() {
 		const radius = tileSize * 0.38
 		const centerX = pacman.x * tileSize + tileSize/2
 		const centerY = pacman.y * tileSize + tileSize/2
+		// Pac-Man with animated mouth (wedge)
+		const mouthOpen = pacman.mouth * 0.5 + 0.05 // radians range
+		const facing = pacman.facing || 0
+		// compute rotation from facing (0 = right, 1 = down, 2 = left, 3 = up)
+		const angle = facing * Math.PI/2
 		c.fillStyle = '#ffd54f'
 		c.beginPath()
-		c.arc(centerX, centerY, radius, 0, Math.PI * 2)
+		c.moveTo(centerX, centerY)
+		c.arc(centerX, centerY, radius, angle + mouthOpen, angle + Math.PI*2 - mouthOpen)
+		c.closePath()
 		c.fill()
 		// Draw Ghosts using same center formula
 		for (const g of ghosts) {
-				const gx = g.x * tileSize + tileSize/2
-				const gy = g.y * tileSize + tileSize/2
-				drawGhost(c, gx, gy, tileSize * 0.8, g.color || '#ef5350')
+			const gx = g.x * tileSize + tileSize/2
+			const gy = g.y * tileSize + tileSize/2 + (g.bobOffset || 0)
+			drawGhost(c, gx, gy, tileSize * 0.8, g.color || '#ef5350', g)
 		}
-		// Debug markers: show logical tile center (small white dot) and actual centers (red cross)
-		if (false) {
-			c.fillStyle = 'rgba(255,255,255,0.9)'
-			c.beginPath(); c.arc(centerX, centerY, 3, 0, Math.PI*2); c.fill()
-			c.strokeStyle = 'rgba(255,0,0,0.9)'
-			c.beginPath(); c.moveTo(centerX-6, centerY); c.lineTo(centerX+6, centerY); c.moveTo(centerX, centerY-6); c.lineTo(centerX, centerY+6); c.stroke()
-		}
+			// Debug markers: show logical tile center (white) and actual center (red cross) + offsets
+			if (SHOW_DEBUG_CENTER) {
+				const tileCenterX = Math.round(pacman.x) * tileSize + tileSize/2
+				const tileCenterY = Math.round(pacman.y) * tileSize + tileSize/2
+				const actualX = pacman.x * tileSize + tileSize/2
+				const actualY = pacman.y * tileSize + tileSize/2
+				// tile center (white)
+				c.fillStyle = 'rgba(255,255,255,0.95)'
+				c.beginPath(); c.arc(tileCenterX, tileCenterY, 3, 0, Math.PI*2); c.fill()
+				// actual center (red cross)
+				c.strokeStyle = 'rgba(255,0,0,0.95)'
+				c.beginPath(); c.moveTo(actualX-6, actualY); c.lineTo(actualX+6, actualY); c.moveTo(actualX, actualY-6); c.lineTo(actualX, actualY+6); c.stroke()
+				// numeric offsets
+				const offX = (actualX - tileCenterX).toFixed(3)
+				const offY = (actualY - tileCenterY).toFixed(3)
+				c.fillStyle = '#fff'
+				c.font = '12px monospace'
+				c.fillText(`offX: ${offX}`, 6, canvasHeight - 28)
+				c.fillText(`offY: ${offY}`, 6, canvasHeight - 12)
+			}
 	// Paused overlay
 	if (paused.value) {
 		c.fillStyle = 'rgba(0,0,0,0.5)'
