@@ -48,7 +48,8 @@ const ctx = ref(null)
 const tileSize = 24
 
 // Fixed classic-like maze (21x21) using characters: # wall, . pellet, ' ' empty
-const MAZE = [
+// Represent maze as a true 2D matrix (array of char arrays) for more accurate indexing
+const MAZE_STR = [
 	"#####################",
 	"#.........#.........#",
 	"#.###.###.#.###.###.#",
@@ -71,6 +72,7 @@ const MAZE = [
 	"#.........G.........#",
 	"#####################",
 ]
+const MAZE = MAZE_STR.map(r => r.split(''))
 const rows = MAZE.length
 const cols = MAZE[0].length
 const canvasWidth = cols * tileSize
@@ -81,7 +83,8 @@ let animationId = 0
 // Grid: 0 empty, 1 pellet, 2 wall
 let grid = [] // 0 empty, 1 pellet, 2 wall
 let pelletCount = 0
-let pacman = { x: 1, y: 1, dirX: 1, dirY: 0, speed: 7, facing: 0 } // facing: 0 right,1 down,2 left,3 up
+// pacman: position (float), current direction (dirX/dirY), queued next direction (nextDirX/nextDirY)
+let pacman = { x: 1, y: 1, dirX: 1, dirY: 0, nextDirX: 0, nextDirY: 0, nextFacing: 0, speed: 7, facing: 0, mouth: 0 }
 let ghosts = []
 
 function buildFixedMaze() {
@@ -100,7 +103,7 @@ function buildFixedMaze() {
 }
 
 function resetEntities() {
-	pacman.dirX = 1; pacman.dirY = 0; pacman.facing = 0; pacman.mouth = 0
+	pacman.dirX = 1; pacman.dirY = 0; pacman.nextDirX = 0; pacman.nextDirY = 0; pacman.nextFacing = 0; pacman.facing = 0; pacman.mouth = 0
 	ghosts = []
 	const count = ghostCount.value || 0
 	const spawnX = cols - 2
@@ -127,24 +130,80 @@ function initGame() {
 // Input handling
 function handleKey(e) {
 	if (e.key === 'Escape') { store.dispatch('togglePause'); return }
-const dir = { ArrowUp: [0, -1, 3], ArrowDown: [0, 1, 1], ArrowLeft: [-1, 0, 2], ArrowRight: [1, 0, 0] }[e.key]
+	const dir = { ArrowUp: [0, -1, 3], ArrowDown: [0, 1, 1], ArrowLeft: [-1, 0, 2], ArrowRight: [1, 0, 0] }[e.key]
 	if (!dir) return
 	const [dx, dy, face] = dir
+	// Queue the requested direction immediately
+	pacman.nextDirX = dx
+	pacman.nextDirY = dy
+	pacman.nextFacing = face
+	// Try an immediate turn if we're close enough to tile center and the target tile is free
 	const cx = Math.round(pacman.x)
 	const cy = Math.round(pacman.y)
-	const aligned = Math.abs(pacman.x - cx) < 0.1 && Math.abs(pacman.y - cy) < 0.1
-	if (!aligned) return
+	const nearCenterX = Math.abs(pacman.x - cx) < 0.42
+	const nearCenterY = Math.abs(pacman.y - cy) < 0.42
 	const nx = cx + dx
 	const ny = cy + dy
-	if (grid[ny] && grid[ny][nx] !== 2) {
-		pacman.dirX = dx
-		pacman.dirY = dy
-		pacman.facing = face
+	if (isWalkable(nx, ny)) {
+		// allow immediate turn when moving perpendicular and close to center, or if currently stopped
+		if ((dx !== 0 && nearCenterY) || (dy !== 0 && nearCenterX) || (pacman.dirX === 0 && pacman.dirY === 0)) {
+			pacman.dirX = dx
+			pacman.dirY = dy
+			pacman.facing = face
+			pacman.nextDirX = 0
+			pacman.nextDirY = 0
+		}
 	}
 }
 
 // Helpers
 function clamp(val, min, max) { return Math.max(min, Math.min(max, val)) }
+
+// Return true if tile (x,y) is walkable (not a wall) and inside bounds
+function isWalkable(x, y) {
+	if (typeof x !== 'number' || typeof y !== 'number') return false
+	if (y < 0 || y >= rows || x < 0 || x >= cols) return false
+	return grid[y][x] !== 2
+}
+
+// BFS to find the next step from (sx,sy) towards (tx,ty). Returns [dx,dy] for the first step or null.
+function bfsNextStep(sx, sy, tx, ty) {
+	if (sx === tx && sy === ty) return null
+	if (!isWalkable(tx, ty)) return null
+	const dirs = [[1,0],[-1,0],[0,1],[0,-1]]
+	const visited = Array.from({ length: rows }, () => Array.from({ length: cols }, () => false))
+	const parent = new Map()
+	const q = []
+	q.push([sx, sy])
+	visited[sy][sx] = true
+	let found = false
+	while (q.length) {
+		const [x, y] = q.shift()
+		if (x === tx && y === ty) { found = true; break }
+		for (const [dx, dy] of dirs) {
+			const nx = x + dx, ny = y + dy
+			if (ny < 0 || ny >= rows || nx < 0 || nx >= cols) continue
+			if (visited[ny][nx]) continue
+			if (!isWalkable(nx, ny)) continue
+			visited[ny][nx] = true
+			parent.set(`${nx},${ny}`, `${x},${y}`)
+			q.push([nx, ny])
+		}
+	}
+	if (!found) return null
+	// reconstruct path: from target back to source
+	let cur = `${tx},${ty}`
+	let prev = parent.get(cur)
+	if (!prev) return null
+	// walk back until the parent is the start
+	while (prev && prev !== `${sx},${sy}`) {
+		cur = prev
+		prev = parent.get(cur)
+	}
+	if (!prev) return null
+	const [firstX, firstY] = cur.split(',').map(Number)
+	return [firstX - sx, firstY - sy]
+}
 
 function step(deltaSeconds) {
 	if (!ctx.value || !difficulty.value) return
@@ -153,17 +212,47 @@ function step(deltaSeconds) {
 	const moveTiles = pacman.speed * deltaSeconds
 	const cx = Math.round(pacman.x)
 	const cy = Math.round(pacman.y)
-	const targetX = cx + pacman.dirX
-	const targetY = cy + pacman.dirY
-	const blocked = pacman.dirX !== 0 || pacman.dirY !== 0 ? (grid[targetY] && grid[targetY][targetX] === 2) : false
-	if (blocked) {
-		// Move back to tile center then stop
+	// If there's a queued turn and we're near the tile center, perform it if possible
+	const distX = pacman.x - cx
+	const distY = pacman.y - cy
+	const nearCenter = Math.hypot(distX, distY) < 0.46
+	if ((pacman.nextDirX !== 0 || pacman.nextDirY !== 0) && nearCenter) {
+		const ntx = cx + pacman.nextDirX
+		const nty = cy + pacman.nextDirY
+		if (isWalkable(ntx, nty)) {
+			pacman.dirX = pacman.nextDirX
+			pacman.dirY = pacman.nextDirY
+			pacman.facing = pacman.nextFacing || pacman.facing
+			pacman.nextDirX = 0; pacman.nextDirY = 0
+		}
+	}
+	// Compute proposed next position and check adjacent tiles along the movement axis to avoid rounding edge cases
+	const nextPX = pacman.x + pacman.dirX * moveTiles
+	const nextPY = pacman.y + pacman.dirY * moveTiles
+	const nextTileX = Math.round(nextPX)
+	const nextTileY = Math.round(nextPY)
+	let canMove = false
+	if (pacman.dirX !== 0 || pacman.dirY !== 0) {
+		if (pacman.dirX !== 0) {
+			// moving horizontally: ensure both the tile at current row and the tile at nextPY row are walkable horizontally
+			const rowA = Math.round(pacman.y)
+			const rowB = Math.round(nextPY)
+			canMove = isWalkable(nextTileX, rowA) && isWalkable(nextTileX, rowB)
+		} else {
+			// moving vertically: ensure both the tile at current column and the tile at nextPX column are walkable vertically
+			const colA = Math.round(pacman.x)
+			const colB = Math.round(nextPX)
+			canMove = isWalkable(colA, nextTileY) && isWalkable(colB, nextTileY)
+		}
+	}
+	if (canMove) {
+		pacman.x = clamp(nextPX, 1, cols - 2)
+		pacman.y = clamp(nextPY, 1, rows - 2)
+	} else if (pacman.dirX !== 0 || pacman.dirY !== 0) {
+		// Blocked: move back to tile center and stop to avoid slipping into walls
 		pacman.x += Math.sign(cx - pacman.x) * Math.min(Math.abs(cx - pacman.x), moveTiles)
 		pacman.y += Math.sign(cy - pacman.y) * Math.min(Math.abs(cy - pacman.y), moveTiles)
-		if (Math.abs(pacman.x - cx) < 0.05 && Math.abs(pacman.y - cy) < 0.05) { pacman.x = cx; pacman.y = cy; pacman.dirX = 0; pacman.dirY = 0 }
-	} else {
-		pacman.x = clamp(pacman.x + pacman.dirX * moveTiles, 1, cols - 2)
-		pacman.y = clamp(pacman.y + pacman.dirY * moveTiles, 1, rows - 2)
+		if (Math.abs(pacman.x - cx) < 0.06 && Math.abs(pacman.y - cy) < 0.06) { pacman.x = cx; pacman.y = cy; pacman.dirX = 0; pacman.dirY = 0 }
 	}
 	// Eat pellet
 	const ix = Math.round(pacman.x)
@@ -183,30 +272,47 @@ function step(deltaSeconds) {
 		// At intersections or on timer, pick direction towards Pacman
 		const cx = Math.round(g.x)
 		const cy = Math.round(g.y)
-		const atCenter = Math.abs(g.x - cx) < 0.1 && Math.abs(g.y - cy) < 0.1
-		if (g.changeTimer <= 0 || atCenter) {
-			const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
-			const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
-			const options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && grid[cy+dy] && grid[cy+dy][cx+dx] !== 2)
-			options.sort((a,b) => {
-				const ax = cx + a[0], ay = cy + a[1]
-				const bx = cx + b[0], by = cy + b[1]
-				const da = Math.abs(ax - Math.round(pacman.x)) + Math.abs(ay - Math.round(pacman.y))
-				const db = Math.abs(bx - Math.round(pacman.x)) + Math.abs(by - Math.round(pacman.y))
-				return da - db
-			})
-			const pick = options[0] || [g.dirX, g.dirY]
-			g.dirX = pick[0]; g.dirY = pick[1]
+		const atCenter = Math.abs(g.x - cx) < 0.28 && Math.abs(g.y - cy) < 0.28
+		// Prefer to continue forward if possible; only pick new direction at center or when forward is blocked
+		const forwardX = cx + g.dirX
+		const forwardY = cy + g.dirY
+		const forwardWalkable = isWalkable(forwardX, forwardY)
+		if (!forwardWalkable || g.changeTimer <= 0 || atCenter) {
+			// Try BFS to find a routed next step to Pac-Man
+			const bfsStep = bfsNextStep(cx, cy, Math.round(pacman.x), Math.round(pacman.y))
+			if (bfsStep && (bfsStep[0] !== -g.dirX || bfsStep[1] !== -g.dirY)) {
+				g.dirX = bfsStep[0]; g.dirY = bfsStep[1]
+			} else {
+				const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
+				const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
+				let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isWalkable(cx+dx, cy+dy))
+				if (options.length === 0) options = dirs.filter(([dx,dy]) => isWalkable(cx+dx, cy+dy))
+				// sort by Manhattan distance to Pac-Man
+				options.sort((a,b) => {
+					const ax = cx + a[0], ay = cy + a[1]
+					const bx = cx + b[0], by = cy + b[1]
+					const da = Math.abs(ax - Math.round(pacman.x)) + Math.abs(ay - Math.round(pacman.y))
+					const db = Math.abs(bx - Math.round(pacman.x)) + Math.abs(by - Math.round(pacman.y))
+					return da - db
+				})
+				const forwardOptionIdx = options.findIndex(o => o[0] === g.dirX && o[1] === g.dirY)
+				let pick = null
+				if (forwardOptionIdx >= 0) pick = options[forwardOptionIdx]
+				else pick = options[0] || [g.dirX, g.dirY]
+				g.dirX = pick[0]; g.dirY = pick[1]
+			}
 			g.changeTimer = 0.5 + Math.random() * 1.0
 		}
 		const gMove = g.speed * deltaSeconds
 		const gxNext = g.x + g.dirX * gMove
 		const gyNext = g.y + g.dirY * gMove
 		const gtx = Math.round(gxNext), gty = Math.round(gyNext)
-		if (grid[gty] && grid[gty][gtx] !== 2) {
+		// Use same next-tile check as Pacman to avoid entering walls mid-step
+		if (isWalkable(gtx, gty)) {
 			g.x = clamp(gxNext, 1, cols - 2)
 			g.y = clamp(gyNext, 1, rows - 2)
 		} else {
+			// try to pick a new direction next frame; if stuck, reverse
 			g.dirX = -g.dirX; g.dirY = -g.dirY; g.changeTimer = 0
 		}
 		// Collision with Pacman
@@ -240,18 +346,27 @@ function draw() {
 			}
 		}
 	}
-	// Draw Pac-Man as solid ball
-	const radius = tileSize * 0.38
-	const centerX = pacman.x * tileSize
-	const centerY = pacman.y * tileSize
-	c.fillStyle = '#ffd54f'
-	c.beginPath()
-	c.arc(centerX, centerY, radius, 0, Math.PI * 2)
-	c.fill()
-	// Draw Ghosts
-	for (const g of ghosts) {
-		drawGhost(c, g.x * tileSize, g.y * tileSize, tileSize * 0.8, g.color || '#ef5350')
-	}
+		// Draw Pac-Man as solid ball using consistent pixel center
+		const radius = tileSize * 0.38
+		const centerX = pacman.x * tileSize + tileSize/2
+		const centerY = pacman.y * tileSize + tileSize/2
+		c.fillStyle = '#ffd54f'
+		c.beginPath()
+		c.arc(centerX, centerY, radius, 0, Math.PI * 2)
+		c.fill()
+		// Draw Ghosts using same center formula
+		for (const g of ghosts) {
+				const gx = g.x * tileSize + tileSize/2
+				const gy = g.y * tileSize + tileSize/2
+				drawGhost(c, gx, gy, tileSize * 0.8, g.color || '#ef5350')
+		}
+		// Debug markers: show logical tile center (small white dot) and actual centers (red cross)
+		if (false) {
+			c.fillStyle = 'rgba(255,255,255,0.9)'
+			c.beginPath(); c.arc(centerX, centerY, 3, 0, Math.PI*2); c.fill()
+			c.strokeStyle = 'rgba(255,0,0,0.9)'
+			c.beginPath(); c.moveTo(centerX-6, centerY); c.lineTo(centerX+6, centerY); c.moveTo(centerX, centerY-6); c.lineTo(centerX, centerY+6); c.stroke()
+		}
 	// Paused overlay
 	if (paused.value) {
 		c.fillStyle = 'rgba(0,0,0,0.5)'
@@ -293,9 +408,9 @@ function drawGhost(c, x, y, size, color) {
 	const eyeOffsetY = h*0.15
 	c.beginPath(); c.arc(x - eyeOffsetX, top + h*0.5, w*0.08, 0, Math.PI*2); c.fill()
 	c.beginPath(); c.arc(x + eyeOffsetX, top + h*0.5, w*0.08, 0, Math.PI*2); c.fill()
-	c.fillStyle = '#1e3a8a'
-	c.beginPath(); c.arc(x - eyeOffsetX + w*0.03, top + h*0.5, w*0.04, 0, Math.PI*2); c.fill()
-	c.beginPath(); c.arc(x + eyeOffsetX + w*0.03, top + h*0.5, w*0.04, 0, Math.PI*2); c.fill()
+	c.fillStyle = '#000'
+	c.beginPath(); c.arc(x - eyeOffsetX + w*0.02, top + h*0.5, w*0.03, 0, Math.PI*2); c.fill()
+	c.beginPath(); c.arc(x + eyeOffsetX + w*0.02, top + h*0.5, w*0.03, 0, Math.PI*2); c.fill()
 }
 
 let lastTime = 0
