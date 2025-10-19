@@ -207,6 +207,52 @@ function bfsNextStep(sx, sy, tx, ty) {
 	return [firstX - sx, firstY - sy]
 }
 
+// --- new helper: find nearest walkable tile to a target (returns [x,y] or null) ---
+function findNearestAccessibleTile(tx, ty) {
+	if (tx < 0 || tx >= cols || ty < 0 || ty >= rows) return null
+	const visited = Array.from({ length: rows }, () => Array.from({ length: cols }, () => false))
+	const q = []
+	q.push([tx, ty])
+	visited[ty][tx] = true
+	const dirs = [[1,0],[-1,0],[0,1],[0,-1]]
+	while (q.length) {
+		const [x, y] = q.shift()
+		if (isWalkable(x, y)) return [x, y]
+		for (const [dx, dy] of dirs) {
+			const nx = x + dx, ny = y + dy
+			if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue
+			if (visited[ny][nx]) continue
+			visited[ny][nx] = true
+			q.push([nx, ny])
+		}
+	}
+	return null
+}
+
+// --- new helper: find BFS distance (in tiles) between two walkable tiles; Infinity if unreachable ---
+function bfsDistance(sx, sy, tx, ty) {
+	if (sx === tx && sy === ty) return 0
+	if (!isWalkable(tx, ty) || sx < 0 || sx >= cols || sy < 0 || sy >= rows) return Infinity
+	const dirs = [[1,0],[-1,0],[0,1],[0,-1]]
+	const visited = Array.from({ length: rows }, () => Array.from({ length: cols }, () => false))
+	const q = []
+	q.push([sx, sy, 0])
+	visited[sy][sx] = true
+	while (q.length) {
+		const [x, y, d] = q.shift()
+		for (const [dx, dy] of dirs) {
+			const nx = x + dx, ny = y + dy
+			if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue
+			if (visited[ny][nx]) continue
+			if (!isWalkable(nx, ny)) continue
+			if (nx === tx && ny === ty) return d + 1
+			visited[ny][nx] = true
+			q.push([nx, ny, d + 1])
+		}
+	}
+	return Infinity
+}
+
 function step(deltaSeconds) {
 	if (!ctx.value || !difficulty.value) return
 	if (gameStatus.value !== 'running') return
@@ -286,29 +332,91 @@ function step(deltaSeconds) {
 		const forwardX = cx + g.dirX
 		const forwardY = cy + g.dirY
 		const forwardWalkable = isWalkable(forwardX, forwardY)
-		if (!forwardWalkable || g.changeTimer <= 0 || atCenter) {
+
+		// if Pac-Man is nearby (in tile units), force a re-evaluation so visual offsets don't hide him
+		const nearPac = Math.hypot(pacman.x - g.x, pacman.y - g.y) < 6.0
+
+		if (!forwardWalkable || g.changeTimer <= 0 || atCenter || nearPac) {
 			// Try BFS to find a routed next step to Pac-Man
-			const bfsStep = bfsNextStep(cx, cy, Math.round(pacman.x), Math.round(pacman.y))
+			// Attempt BFS toward Pac-Man's tile and its neighbors (3x3) so slight offsets don't hide Pac-Man
+			let bfsStep = null
+			const px = Math.round(pacman.x), py = Math.round(pacman.y)
+			const candidates = []
+			for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+				const tx = px + ox, ty = py + oy
+				if (tx < 0 || tx >= cols || ty < 0 || ty >= rows) continue
+				// if the tile itself is walkable use it; otherwise find nearest accessible tile around it
+				if (isWalkable(tx, ty)) {
+					candidates.push([tx, ty])
+				} else {
+					const near = findNearestAccessibleTile(tx, ty)
+					if (near) candidates.push(near)
+				}
+			}
+
+			for (const [tx, ty] of candidates) {
+				const stepDir = bfsNextStep(cx, cy, tx, ty)
+				if (stepDir) { bfsStep = stepDir; break }
+			}
 			if (bfsStep && (bfsStep[0] !== -g.dirX || bfsStep[1] !== -g.dirY)) {
 				g.dirX = bfsStep[0]; g.dirY = bfsStep[1]
 			} else {
-				const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
-				const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
-				let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isWalkable(cx+dx, cy+dy))
-				if (options.length === 0) options = dirs.filter(([dx,dy]) => isWalkable(cx+dx, cy+dy))
-				// sort by Manhattan distance to Pac-Man
-				options.sort((a,b) => {
-					const ax = cx + a[0], ay = cy + a[1]
-					const bx = cx + b[0], by = cy + b[1]
-					const da = Math.abs(ax - Math.round(pacman.x)) + Math.abs(ay - Math.round(pacman.y))
-					const db = Math.abs(bx - Math.round(pacman.x)) + Math.abs(by - Math.round(pacman.y))
-					return da - db
-				})
-				const forwardOptionIdx = options.findIndex(o => o[0] === g.dirX && o[1] === g.dirY)
-				let pick = null
-				if (forwardOptionIdx >= 0) pick = options[forwardOptionIdx]
-				else pick = options[0] || [g.dirX, g.dirY]
-				g.dirX = pick[0]; g.dirY = pick[1]
+				// If pac-man is very close (within ~1.5 tiles), try a direct chase based on actual positions
+				const dxTile = pacman.x - g.x
+				const dyTile = pacman.y - g.y
+				const distTiles = Math.hypot(dxTile, dyTile)
+				if (distTiles <= 1.5) {
+					// prefer the axis with larger absolute difference
+					let candDir = [Math.sign(dxTile), 0]
+					if (Math.abs(dyTile) > Math.abs(dxTile)) candDir = [0, Math.sign(dyTile)]
+					// avoid immediate reverse if possible
+					if (candDir[0] === -g.dirX && candDir[1] === -g.dirY) {
+						// try the orthogonal axis
+						candDir = candDir[0] === 0 ? [Math.sign(dxTile), 0] : [0, Math.sign(dyTile)]
+					}
+					// only commit if the tile ahead is walkable; otherwise fallback to normal options
+					if (isWalkable(cx + candDir[0], cy + candDir[1])) {
+						g.dirX = candDir[0]; g.dirY = candDir[1]
+					} else {
+						// fallback to original options selection
+						const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
+						const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
+						let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isWalkable(cx+dx, cy+dy))
+						if (options.length === 0) options = dirs.filter(([dx,dy]) => isWalkable(cx+dx, cy+dy))
+						options.sort((a,b) => {
+							const ax = cx + a[0], ay = cy + a[1]
+							const bx = cx + b[0], by = cy + b[1]
+							const da = Math.abs(ax - px) + Math.abs(ay - py)
+							const db = Math.abs(bx - px) + Math.abs(by - py)
+							return da - db
+						})
+						const forwardOptionIdx = options.findIndex(o => o[0] === g.dirX && o[1] === g.dirY)
+						let pick = null
+						if (forwardOptionIdx >= 0) pick = options[forwardOptionIdx]
+						else pick = options[0] || [g.dirX, g.dirY]
+						g.dirX = pick[0]; g.dirY = pick[1]
+					}
+				} else {
+					// original fallback behavior when not near Pac-Man
+					const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
+					const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
+					let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isWalkable(cx+dx, cy+dy))
+					if (options.length === 0) options = dirs.filter(([dx,dy]) => isWalkable(cx+dx, cy+dy))
+					// sort by real BFS distance to Pac-Man tile when possible
+					options.sort((a,b) => {
+						const ax = cx + a[0], ay = cy + a[1]
+						const bx = cx + b[0], by = cy + b[1]
+						const da = bfsDistance(ax, ay, px, py)
+						const db = bfsDistance(bx, by, px, py)
+						if (da === db) return (Math.abs(ax - px) + Math.abs(ay - py)) - (Math.abs(bx - px) + Math.abs(by - py))
+						return da - db
+					})
+					const forwardOptionIdx = options.findIndex(o => o[0] === g.dirX && o[1] === g.dirY)
+					let pick = null
+					if (forwardOptionIdx >= 0) pick = options[forwardOptionIdx]
+					else pick = options[0] || [g.dirX, g.dirY]
+					g.dirX = pick[0]; g.dirY = pick[1]
+				}
 			}
 			g.changeTimer = 0.5 + Math.random() * 1.0
 		}
@@ -325,9 +433,20 @@ function step(deltaSeconds) {
 			g.dirX = -g.dirX; g.dirY = -g.dirY; g.changeTimer = 0
 		}
 		// Collision with Pacman
-		if (Math.hypot(g.x - pacman.x, g.y - pacman.y) < 0.6) {
-			store.dispatch('setLost')
-			store.dispatch('pauseGame')
+		// pixel-based collision: compare circle overlap using drawn sizes (includes ghost bob offset)
+		{
+			const pacPx = pacman.x * tileSize + tileSize / 2
+			const pacPy = pacman.y * tileSize + tileSize / 2
+			const ghostPx = g.x * tileSize + tileSize / 2
+			const ghostPy = g.y * tileSize + tileSize / 2 + (g.bobOffset || 0)
+			const dist = Math.hypot(ghostPx - pacPx, ghostPy - pacPy)
+			const pacR = tileSize * 0.38
+			const ghostR = (tileSize * 0.8) / 2
+			// collision if circles overlap
+			if (dist < pacR + ghostR) {
+				store.dispatch('setLost')
+				store.dispatch('pauseGame')
+			}
 		}
 	}
 
