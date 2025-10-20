@@ -7,7 +7,7 @@ const difficultyToGhosts = {
 }
 
 const store = createStore({
-	state: {
+	state: {  /*Holds the global state of the game*/
 		selectedDifficulty: null,
 		ghostCount: 0,
 		score: 0,
@@ -15,7 +15,7 @@ const store = createStore({
 		gameVersion: 0,
 		gameStatus: 'idle', // idle | running | won | lost
 	},
-	mutations: {
+	mutations: {   /*Mutations change the state*/
 		setDifficulty(state, difficulty) {
 			state.selectedDifficulty = difficulty
 			state.ghostCount = difficultyToGhosts[difficulty]
@@ -34,7 +34,7 @@ const store = createStore({
 		},
 		setGameStatus(state, status) { state.gameStatus = status },
 	},
-	actions: {
+	actions: {  /*functions that can be async and call mutations*/
 		chooseDifficulty({ commit }, difficulty) {
 			commit('setDifficulty', difficulty)
 		},

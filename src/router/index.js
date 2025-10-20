@@ -1,3 +1,5 @@
+/*create a router instance for your app.*/
+/*uses hash-based URLs*/
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
