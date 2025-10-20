@@ -15,6 +15,8 @@
 
 		<!-- Canvas Area -->
 		<canvas ref="canvasRef" :width="canvasWidth" :height="canvasHeight" class="board" />
+		<audio ref="gameOverAudio" :src="gameOverAudioUrl" preload="auto" playsinline></audio>
+		<audio ref="winAudio" :src="winAudioUrl" preload="auto" playsinline></audio>
 		<div v-if="!difficulty" class="overlay">Select a level on Home to start.</div>
 	</div>
 </template>
@@ -46,6 +48,10 @@ function goHome() { router.push({ name: 'home' }) }
 const canvasRef = ref(null)
 const ctx = ref(null)
 const tileSize = 24
+const gameOverAudio = ref(null)
+const winAudio = ref(null)
+const gameOverAudioUrl = new URL('../assets/losing sound effects.mp3', import.meta.url).href
+const winAudioUrl = new URL('../assets/winning sound effect.mp3', import.meta.url).href
 
 // Fixed classic-like maze (21x21) using characters: # wall, . pellet, ' ' empty
 // Represent maze as a true 2D matrix (array of char arrays) for more accurate indexing
@@ -72,6 +78,8 @@ const MAZE_STR = [
 	"#.........G.........#",
 	"#####################",
 ]
+
+
 const MAZE = MAZE_STR.map(r => r.split(''))
 const rows = MAZE.length
 const cols = MAZE[0].length
@@ -87,7 +95,21 @@ let pelletCount = 0
 let pacman = { x: 1, y: 1, dirX: 1, dirY: 0, nextDirX: 0, nextDirY: 0, nextFacing: 0, speed: 7, facing: 0, mouth: 0, mouthPhase: 0 }
 let ghosts = []
 // Debug toggle: set true to show tile vs actual center markers and offsets
-const SHOW_DEBUG_CENTER = true
+const SHOW_DEBUG_CENTER = false
+
+// Safe zones: Pac-Man may enter; ghosts may not. Adjust these 6 coordinates as needed
+const safeZones = new Set(
+	[
+		// left side (top/mid/bottom)
+		[2,3], [2,10], [2,16],
+		// right side (top/mid/bottom)
+		[18,3], [18,10], [18,16],
+	].map(([x,y]) => `${x},${y}`)
+)
+
+function isSafeTile(x, y) {
+	return safeZones.has(`${x},${y}`)
+}
 
 function buildFixedMaze() {
 	grid = Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0))
@@ -165,7 +187,15 @@ function clamp(val, min, max) { return Math.max(min, Math.min(max, val)) }
 function isWalkable(x, y) {
 	if (typeof x !== 'number' || typeof y !== 'number') return false
 	if (y < 0 || y >= rows || x < 0 || x >= cols) return false
-	return grid[y][x] !== 2
+	if (grid[y][x] === 2) return false
+	return true
+}
+
+function isGhostWalkable(x, y) {
+	if (!isWalkable(x, y)) return false
+	// Ghosts cannot enter safe tiles
+	if (isSafeTile(x, y)) return false
+	return true
 }
 
 // BFS to find the next step from (sx,sy) towards (tx,ty). Returns [dx,dy] for the first step or null.
@@ -331,7 +361,7 @@ function step(deltaSeconds) {
 		// Prefer to continue forward if possible; only pick new direction at center or when forward is blocked
 		const forwardX = cx + g.dirX
 		const forwardY = cy + g.dirY
-		const forwardWalkable = isWalkable(forwardX, forwardY)
+		const forwardWalkable = isGhostWalkable(forwardX, forwardY)
 
 		// if Pac-Man is nearby (in tile units), force a re-evaluation so visual offsets don't hide him
 		const nearPac = Math.hypot(pacman.x - g.x, pacman.y - g.y) < 6.0
@@ -381,8 +411,8 @@ function step(deltaSeconds) {
 						// fallback to original options selection
 						const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
 						const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
-						let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isWalkable(cx+dx, cy+dy))
-						if (options.length === 0) options = dirs.filter(([dx,dy]) => isWalkable(cx+dx, cy+dy))
+						let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isGhostWalkable(cx+dx, cy+dy))
+						if (options.length === 0) options = dirs.filter(([dx,dy]) => isGhostWalkable(cx+dx, cy+dy))
 						options.sort((a,b) => {
 							const ax = cx + a[0], ay = cy + a[1]
 							const bx = cx + b[0], by = cy + b[1]
@@ -400,8 +430,8 @@ function step(deltaSeconds) {
 					// original fallback behavior when not near Pac-Man
 					const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ]
 					const notReverse = (dx,dy) => !(dx === -g.dirX && dy === -g.dirY)
-					let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isWalkable(cx+dx, cy+dy))
-					if (options.length === 0) options = dirs.filter(([dx,dy]) => isWalkable(cx+dx, cy+dy))
+					let options = dirs.filter(([dx,dy]) => notReverse(dx,dy) && isGhostWalkable(cx+dx, cy+dy))
+					if (options.length === 0) options = dirs.filter(([dx,dy]) => isGhostWalkable(cx+dx, cy+dy))
 					// sort by real BFS distance to Pac-Man tile when possible
 					options.sort((a,b) => {
 						const ax = cx + a[0], ay = cy + a[1]
@@ -425,7 +455,7 @@ function step(deltaSeconds) {
 		const gyNext = g.y + g.dirY * gMove
 		const gtx = Math.round(gxNext), gty = Math.round(gyNext)
 		// Use same next-tile check as Pacman to avoid entering walls mid-step
-		if (isWalkable(gtx, gty)) {
+		if (isGhostWalkable(gtx, gty)) {
 			g.x = clamp(gxNext, 1, cols - 2)
 			g.y = clamp(gyNext, 1, rows - 2)
 		} else {
@@ -475,7 +505,12 @@ function draw() {
 			const px = x * tileSize
 			const py = y * tileSize
 			if (cell === 2) {
-				c.fillStyle = '#1e3a8a'
+				// Darker walls if adjacent to a safe tile
+				const adjSafe = (
+					(isSafeTile(x-1, y)) || (isSafeTile(x+1, y)) ||
+					(isSafeTile(x, y-1)) || (isSafeTile(x, y+1))
+				)
+				c.fillStyle = adjSafe ? '#0b3d91' : '#1e3a8a'
 				c.fillRect(px, py, tileSize, tileSize)
 			} else if (cell === 1) {
 				c.fillStyle = '#ffeb3b'
@@ -591,11 +626,35 @@ onMounted(() => {
 onBeforeUnmount(() => {
 	window.removeEventListener('keydown', handleKey)
 	cancelAnimationFrame(animationId)
+	if (gameOverAudio.value) { try { gameOverAudio.value.pause() } catch (_) {} }
+	if (winAudio.value) { try { winAudio.value.pause() } catch (_) {} }
 })
 
 // Reinitialize when difficulty or new game requested
 watch([difficulty, gameVersion], () => {
 	initGame()
+	// stop any audio when starting/restarting
+	if (gameOverAudio.value) { try { gameOverAudio.value.pause(); gameOverAudio.value.currentTime = 0 } catch (_) {} }
+	if (winAudio.value) { try { winAudio.value.pause(); winAudio.value.currentTime = 0 } catch (_) {} }
+})
+
+// Play sound when the player loses or wins
+watch(gameStatus, (val) => {
+	if (val === 'lost' && gameOverAudio.value) {
+		try {
+			gameOverAudio.value.currentTime = 0
+			gameOverAudio.value.play()
+		} catch (_) {}
+	} else if (val === 'won' && winAudio.value) {
+		try {
+			winAudio.value.currentTime = 0
+			winAudio.value.play()
+		} catch (_) {}
+	} else {
+		// Pause any playing audio when game status changes
+		if (gameOverAudio.value) { try { gameOverAudio.value.pause() } catch (_) {} }
+		if (winAudio.value) { try { winAudio.value.pause() } catch (_) {} }
+	}
 })
 </script>
 

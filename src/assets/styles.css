@@ -204,41 +204,41 @@ span.line {
 
 span.border {
   margin: 4px;
-  border: 2px solid #15a;
+  border: 2px solid #0b3d91;
 }
 
 span.border-top {
   margin-top: 4px;
-  border-top: 2px solid #15a;
+  border-top: 2px solid #0b3d91;
 }
 
 span.border-right {
   margin-right: 4px;
-  border-right: 2px solid #15a;
+  border-right: 2px solid #0b3d91;
 }
 
 span.border-bottom {
   margin-bottom: 4px;
-  border-bottom: 2px solid #15a;
+  border-bottom: 2px solid #0b3d91;
 }
 
 span.border-left {
   margin-left: 4px;
-  border-left: 2px solid #15a;
+  border-left: 2px solid #0b3d91;
 }
 
 span.border-y {
   margin-top: 4px;
   margin-bottom: 4px;
-  border-top: 2px solid #15a;
-  border-bottom: 2px solid #15a;
+  border-top: 2px solid #0b3d91;
+  border-bottom: 2px solid #0b3d91;
 }
 
 span.border-y::before,
 span.border-y::after {
   content: "";
-  border-top: 2px solid #15a;
-  border-bottom: 2px solid #15a;
+  border-top: 2px solid #0b3d91;
+  border-bottom: 2px solid #0b3d91;
   position: absolute;
   top: -2px;
   bottom: -2px;
@@ -271,15 +271,15 @@ span.door-r::before {
 span.border-x {
   margin-left: 4px;
   margin-right: 4px;
-  border-left: 2px solid #15a;
-  border-right: 2px solid #15a;
+  border-left: 2px solid #0b3d91;
+  border-right: 2px solid #0b3d91;
 }
 
 span.border-x::before,
 span.border-x::after {
   content: "";
-  border-left: 0.125rem solid #15a;
-  border-right: 0.125rem solid #15a;
+  border-left: 0.125rem solid #0b3d91;
+  border-right: 0.125rem solid #0b3d91;
   position: absolute;
   left: -2px;
   right: -2px;
@@ -393,7 +393,7 @@ span.border-x::after {
 /* Corner decorations */
 .close-top-left::before {
   content: "";
-  border-left: 0.125rem solid #15a;
+  border-left: 0.125rem solid #0b3d91;
   position: absolute;
   left: 4px;
   height: 12px;
@@ -402,7 +402,7 @@ span.border-x::after {
 
 .close-top-right::before {
   content: "";
-  border-right: 0.125rem solid #15a;
+  border-right: 0.125rem solid #0b3d91;
   position: absolute;
   right: 4px;
   height: 12px;
@@ -411,7 +411,7 @@ span.border-x::after {
 
 .close-bottom-left::after {
   content: "";
-  border-left: 0.125rem solid #15a;
+  border-left: 0.125rem solid #0b3d91;
   position: absolute;
   left: 4px;
   height: 12px;
@@ -420,7 +420,7 @@ span.border-x::after {
 
 .close-bottom-right::after {
   content: "";
-  border-right: 0.125rem solid #15a;
+  border-right: 0.125rem solid #0b3d91;
   position: absolute;
   right: 4px;
   height: 12px;
@@ -429,7 +429,7 @@ span.border-x::after {
 
 .close-left-top::before {
   content: "";
-  border-top: 0.125rem solid #15a;
+  border-top: 0.125rem solid #0b3d91;
   position: absolute;
   top: 4px;
   width: 12px;
@@ -438,7 +438,7 @@ span.border-x::after {
 
 .close-left-bottom::before {
   content: "";
-  border-bottom: 0.125rem solid #15a;
+  border-bottom: 0.125rem solid #0b3d91;
   position: absolute;
   bottom: 4px;
   width: 12px;
@@ -447,7 +447,7 @@ span.border-x::after {
 
 .close-right-top::after {
   content: "";
-  border-top: 0.125rem solid #15a;
+  border-top: 0.125rem solid #0b3d91;
   position: absolute;
   top: 4px;
   width: 12px;
@@ -456,7 +456,7 @@ span.border-x::after {
 
 .close-right-bottom::after {
   content: "";
-  border-bottom: 0.125rem solid #15a;
+  border-bottom: 0.125rem solid #0b3d91;
   position: absolute;
   bottom: 4px;
   width: 12px;
